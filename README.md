@@ -11,6 +11,7 @@
 
 | 05 | 워터마크 훼손 후 다수결 복구 | 같은 서버의 http://localhost:8080/recovery.html |
 | 06 | DCT 강도 T별 화질·강인성 비교 | 같은 서버의 http://localhost:8080/strength.html |
+| 07 | 다수결, Hamming, Reed-Solomon 복구 비교 | 같은 서버의 http://localhost:8080/codes.html |
 
 훼손 후 복구 페이지에서는 LSB/DCT, JPEG·Blur·축소 조건을 선택하고, 훼손 이미지 확인 → 메시지 복구 → 비트별 투표 결과를 단계별로 확인합니다. 복구 대상은 숨긴 메시지이며 이미지 화질 복원이 아닙니다. 추출 시 삽입 위치와 메시지 길이를 알고 있다고 가정합니다.
 
@@ -20,6 +21,7 @@
 - `internal/attack` — JPEG, Gaussian Blur, 축소 후 복원 (RGB만 대상, 입력을 불투명화)
 - `internal/dct` — 8×8 블록 DCT 계수쌍 (2,1)/(1,2)의 대소 관계로 비트 삽입, 블록 전체에 반복 (semi-blind)
 - `internal/vote` — 반복 삽입한 비트의 다수결 집계
+- `internal/ecc` — Hamming(7,4), GF(256) Reed-Solomon 부호화와 복호
 - `internal/metrics` — MSE, PSNR, BER
 - `internal/visualize` — 비트플레인, 차이 증폭 이미지
 - `cmd/NN-주제` — 편별 시뮬레이션 진입점, 결과는 `out/NN/`

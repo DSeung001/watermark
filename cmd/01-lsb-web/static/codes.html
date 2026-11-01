@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>복구 방식 비교</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="wide">
+  <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/strength.html">강도 비교</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a><a href="/codes.html" aria-current="page">복구 방식 비교</a></nav>
+  <h1>복구 방식 비교</h1>
+  <p class="muted">같은 블록 수에 다수결, Hamming, Reed-Solomon을 적용하고, 훼손 후 메시지가 얼마나 복구되는지 비교합니다.</p>
+  <form id="form">
+    <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off" aria-label="숨길 메시지">
+    <button type="submit">측정하기</button>
+  </form>
+  <div class="code-controls">
+    <label>DCT 강도 T <select id="strength"></select></label>
+    <label>훼손 조건 <select id="attack"></select></label>
+  </div>
+  <div class="summary" id="summary"></div>
+
+  <div id="out" hidden>
+    <section>
+      <h2><span class="num">1</span>전체 흐름</h2>
+      <p class="muted" id="flowDesc"></p>
+      <div class="tbl-wrap"><table class="flow" id="flow"></table></div>
+      <p class="note" style="margin-top:12px" id="flowNote"></p>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span>훼손 조건별 메시지 BER</h2>
+      <p class="muted" id="berDesc"></p>
+      <div class="tbl-wrap"><table class="st-ber" id="ber"></table></div>
+      <div class="legend">
+        <span><b class="st ok">✓</b> 완전 복원</span>
+        <span><b class="st part">△</b> 일부 오류</span>
+        <span><b class="st bad">✗</b> 무작위 수준</span>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span>T별 완전 복원 조건 수</h2>
+      <p class="muted">훼손 조건 9개 중 메시지가 원본과 정확히 일치한 조건의 수입니다. PSNR은 다수결 삽입 기준 값입니다.</p>
+      <div class="tbl-wrap"><table class="code-t" id="byT"></table></div>
+    </section>
+  </div>
+</main>
+<script src="/attack-view.js"></script>
+<script src="/codes.js"></script>
+</body>
+</html>
