@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LSB vs DCT 비교</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="wide">
+  <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/compare.html" aria-current="page">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a></nav>
+  <h1>LSB vs DCT</h1>
+  <p class="muted">막대는 워터마크의 BER(틀린 비트 비율)입니다. <b>짧을수록 잘 버틴 것</b>이고, 점선 0.5까지 가면 무작위로 찍은 것과 같습니다. 왼쪽에서 오른쪽으로 갈수록 훼손이 강해집니다.</p>
+  <div class="legend vs-legend" aria-label="범례">
+    <span><span class="sw" style="background:var(--s2)"></span>LSB</span>
+    <span><span class="sw" style="background:var(--s1)"></span>DCT</span>
+    <span><b class="st ok">✓</b> 완전 복원</span>
+    <span><b class="st part">△</b> 일부 오류</span>
+    <span><b class="st bad">✗</b> 무작위 수준</span>
+  </div>
+  <div class="summary err" id="error" hidden></div>
+  <div id="cards"></div>
+</main>
+<script src="/attack-view.js"></script>
+<script>
+const MESSAGE = "https://dseung001.github.io/";
+const AXIS_MAX = 0.6; // 0.5를 넘는 값도 잘리지 않게 여유를 둔다
+
+const EXPERIMENTS = [
+  { kind: "jpeg", title: "1. JPEG 압축", how: "PNG → JPEG", question: "손실 압축으로 픽셀 값이 변할 때 워터마크가 유지되는가?" },
+  { kind: "blur", title: "2. 필터 적용", how: "Gaussian Blur", question: "주변 픽셀이 섞여도 워터마크를 복원할 수 있는가?" },
+  { kind: "resize", title: "3. 해상도 변경", how: "원본 대비 축소", question: "픽셀 개수와 위치가 바뀌어도 워터마크를 찾을 수 있는가?" },
+];
+
+function answer(l, d) {
+  if (l.match && d.match) return "둘 다 유지";
+  if (d.match) return "DCT만 유지";
+  if (l.match) return "LSB만 유지";
+  if (l.ber >= NOISE_BER && d.ber >= NOISE_BER) return "둘 다 유지 못 함";
+  return `둘 다 오류, ${d.ber < l.ber ? "DCT" : "LSB"} 우세`;
+}
+
+function barRow(name, c) {
+  const v = verdict(c);
+  return `<div class="vs-row">
+    <span class="vs-name">${name}</span>
+    <div class="vs-track"><i class="vs-chance"></i><div class="vs-bar ${name.toLowerCase()}" style="width:${(c.ber / AXIS_MAX) * 100}%"></div></div>
+    <span class="vs-val"><b>${c.ber.toFixed(3)}</b> <span class="st ${v.cls}" title="${escHTML(v.text)}">${v.text.slice(0, 1)}</span></span>
+  </div>`;
+}
+
+function cell(l, d) {
+  return `<div class="vs-cell">
+    <div class="vs-lv">${escHTML(l.label)}</div>
+    ${barRow("LSB", l)}
+    ${barRow("DCT", d)}
+    <p class="vs-answer">→ ${answer(l, d)}</p>
+  </div>`;
+}
+
+function card(exp, lsbCases, dctCases) {
+  const el = document.createElement("section");
+  el.className = "vs";
+  const cells = lsbCases
+    .map((c, i) => (c.attack === exp.kind ? cell(c, dctCases[i]) : ""))
+    .join("");
+  el.innerHTML = `<h2>${escHTML(exp.title)} <span class="vs-how">${escHTML(exp.how)}</span></h2>
+    <p class="muted">${escHTML(exp.question)}</p>
+    <div class="vs-grid">${cells}</div>`;
+  return el;
+}
+
+(async () => {
+  try {
+    const [lsb, dct] = await Promise.all([postAttack("lsb", MESSAGE), postAttack("dct", MESSAGE)]);
+    const root = document.getElementById("cards");
+    for (const exp of EXPERIMENTS) root.appendChild(card(exp, lsb.cases, dct.cases));
+  } catch (e) {
+    const box = document.getElementById("error");
+    box.textContent = e.message;
+    box.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

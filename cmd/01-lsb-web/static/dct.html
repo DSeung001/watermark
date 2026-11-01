@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DCT 워터마크 시뮬레이터</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html" aria-current="page">DCT</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a></nav>
+  <h1>DCT 워터마크 시뮬레이터</h1>
+  <form id="form">
+    <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off" aria-label="숨길 메시지">
+    <button type="submit">워터마크 삽입</button>
+    <label class="field">강도 T
+      <input type="range" id="strength" min="12" max="60" step="4" value="36">
+      <output id="strengthOut">36</output>
+    </label>
+  </form>
+  <div class="summary" id="summary"></div>
+
+  <div id="out" hidden>
+    <section>
+      <h2><span class="num">1</span>넣기 전 / 넣은 후</h2>
+      <p class="muted" id="whereText"></p>
+      <div class="pair">
+        <figure><div class="frame"><img id="imgOrig" src="/img/original.png" alt="워터마크 넣기 전"><img class="overlay" id="mapOverlay" alt=""></div><figcaption>넣기 전. 파란 칸이 삽입에 쓰는 8×8 블록</figcaption></figure>
+        <figure><div class="frame"><img id="imgWm" alt="워터마크 넣은 후"></div><figcaption>넣은 후</figcaption></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span>저장 방식: 계수쌍의 대소 관계</h2>
+      <p>이미지를 8×8 블록으로 나누고 블록마다 밝기(Y)를 DCT로 주파수 성분 64개로 바꿉니다. 그중 대칭인 두 계수 <span id="pairText"></span>의 차이로 1비트를 표현합니다.</p>
+      <div class="rule" id="ruleText"></div>
+      <h3 id="traceTitle"></h3>
+      <div class="coefs">
+        <figure><div class="tbl-wrap"><table class="coef" id="coefBefore"></table></div><figcaption id="capBefore"></figcaption></figure>
+        <figure><div class="tbl-wrap"><table class="coef" id="coefAfter"></table></div><figcaption id="capAfter"></figcaption></figure>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--accent)"></span>c₁</span>
+        <span><span class="sw" style="background:var(--header)"></span>c₂</span>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span>읽을 때: 어떤 값이 워터마크인가</h2>
+      <ol class="read">
+        <li><b>어디서</b>: 같은 8×8 블록 목록을 같은 순서로 봅니다.</li>
+        <li><b>무엇을</b>: 블록의 c₁ − c₂ 부호만 봅니다. 양수면 1, 음수면 0입니다.</li>
+        <li><b>얼마나</b>: 블록 k는 메시지 비트 k mod <span id="nBitsText"></span>번의 복사본입니다. 비트마다 복사본을 모아 다수결로 정합니다.</li>
+      </ol>
+      <p class="note">이 구현은 <b>semi-blind</b>입니다. 블록 목록은 원본의 투명도에서 구하는데 공격을 거치면 알파 채널이 사라지므로, 추출하는 쪽도 원본 마스크와 메시지 길이를 알아야 합니다. 그래서 길이 헤더가 없습니다. 훼손 실험의 LSB도 같은 조건으로 읽어 비교합니다.</p>
+    </section>
+
+    <section>
+      <h2>평가 지표</h2>
+      <div class="tbl-wrap"><table class="metrics" id="metrics"></table></div>
+    </section>
+
+    <div id="view"></div>
+
+    <section>
+      <h2><span class="num">7</span>LSB와 비교</h2>
+      <p class="muted" id="cmpIntro"></p>
+      <div id="cmpChart"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="cmpTable"></table></div>
+    </section>
+  </div>
+</main>
+<script src="/attack-view.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const view = createAttackView($("view"), "dct", 4);
+let token = 0;
+
+$("strength").addEventListener("input", () => { $("strengthOut").textContent = $("strength").value; });
+$("strength").addEventListener("change", run);
+$("form").addEventListener("submit", (e) => { e.preventDefault(); run(); });
+run();
+
+async function run() {
+  const mine = ++token;
+  const message = $("msg").value, strength = +$("strength").value;
+  $("summary").innerHTML = `<span class="loading">측정 중…</span>`;
+  try {
+    const res = await fetch("/api/dct/embed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, strength }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    const [dctRes, lsbRes] = await Promise.all([postAttack("dct", message, strength), postAttack("lsb", message)]);
+    if (mine !== token) return; // 더 최신 요청이 있으면 버린다
+    render(d);
+    view.render(dctRes);
+    renderCompare(dctRes, lsbRes);
+    $("out").hidden = false;
+  } catch (e) {
+    if (mine === token) $("summary").innerHTML = `<span class="err">${escHTML(e.message)}</span>`;
+  }
+}
+
+function coefTable(values, p) {
+  let html = "";
+  for (let v = 0; v < 8; v++) {
+    html += "<tr>";
+    for (let u = 0; u < 8; u++) {
+      const cls = u === p.U1 && v === p.V1 ? "p1" : u === p.U2 && v === p.V2 ? "p2" : "";
+      html += `<td class="${cls}">${Math.round(values[v * 8 + u])}</td>`;
+    }
+    html += "</tr>";
+  }
+  return html;
+}
+
+function render(d) {
+  const psnr = d.psnr == null ? "∞" : d.psnr.toFixed(1);
+  $("summary").innerHTML = `추출 <b>${escHTML(showText(d.extracted))}</b> ${d.match ? "✓" : "✗"} · ${d.blocks.toLocaleString()}블록 사용 · PSNR ${psnr} dB`;
+  $("imgWm").src = d.watermarked;
+  $("mapOverlay").src = d.blockMap;
+  $("whereText").textContent =
+    `전체 ${d.totalBlocks.toLocaleString()}블록 중 모든 픽셀이 불투명하고 너무 어둡거나 밝지 않은 ${d.blocks.toLocaleString()}블록만 씁니다. 값 0이나 255 근처에서는 변화가 잘려 나가기 때문입니다. 메시지는 약 ${d.repeat}번 반복됩니다.`;
+
+  const p = d.pair;
+  $("pairText").innerHTML = `<code>c₁=(${p.U1},${p.V1})</code>, <code>c₂=(${p.U2},${p.V2})</code>`;
+  $("ruleText").innerHTML = `비트 1 → c₁ − c₂ ≥ +T &nbsp;&nbsp; 비트 0 → c₁ − c₂ ≤ −T &nbsp;&nbsp; (T = ${d.strength})`;
+  $("nBitsText").textContent = d.payloadBytes * 8;
+  const t = d.trace;
+  if (t) {
+    $("traceTitle").textContent = `예: 블록 (${t.block.x},${t.block.y})에 비트 ${t.bit} 넣기 (계수 64개, 왼쪽 위가 저주파)`;
+    $("coefBefore").innerHTML = coefTable(t.before, p);
+    $("coefAfter").innerHTML = coefTable(t.after, p);
+    $("capBefore").textContent = `넣기 전: c₁ − c₂ = ${t.diffBefore.toFixed(1)}`;
+    $("capAfter").textContent = `넣은 후: c₁ − c₂ = ${t.diffAfter.toFixed(1)}`;
+  }
+
+  const rows = [
+    ["PSNR", `${psnr} dB`, "이미지 품질", "원본 대비 픽셀 오차. 40dB 이상이면 눈으로 차이를 느끼기 어려움. 투명 영역까지 포함한 평균이라 보이는 영역만 보면 더 낮음"],
+    ["SSIM", d.ssim.toFixed(7), "구조적 유사성", "밝기·대비·구조가 얼마나 같은지. 1이면 동일"],
+    ["BER", d.ber.toFixed(4), "워터마크 복원 정확도", "PNG로 저장했다 읽은 뒤 공격 없이 추출한 값"],
+    ["Capacity", `${d.payloadBytes} / ${d.capacity.toLocaleString()} bytes`, "삽입 용량", "블록당 1비트. 남는 블록은 반복에 써서 강인성을 높임"],
+  ];
+  $("metrics").innerHTML = `<tr><th>지표</th><th>값</th><th>측정 대상</th><th>해석</th></tr>` +
+    rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("");
+}
+
+function renderCompare(dct, lsb) {
+  const psnr = (v) => (v == null ? "∞" : v.toFixed(1));
+  $("cmpIntro").textContent =
+    `같은 메시지, 같은 공격, 같은 추출 조건(원본 마스크와 메시지 길이를 앎)입니다. 삽입 품질 PSNR은 LSB ${psnr(lsb.wmPsnr)} dB, DCT ${psnr(dct.wmPsnr)} dB이고, 메시지 반복 횟수는 LSB ${lsb.repeat.toLocaleString()}회, DCT ${dct.repeat}회입니다.`;
+  const labels = dct.cases.map((c) => c.label.replace("품질 ", "Q").replace("반경 ", ""));
+  drawBerCharts($("cmpChart"), [
+    { name: "LSB 다수결 BER", color: "var(--s2)", dash: "5 3", square: true, values: lsb.cases.map((c) => c.ber) },
+    { name: "DCT 다수결 BER", color: "var(--s1)", values: dct.cases.map((c) => c.ber) },
+  ], labels);
+  $("cmpTable").innerHTML =
+    `<tr><th>조건</th><th>LSB 다수결</th><th>DCT 다수결</th><th>LSB 단일</th><th>DCT 단일</th></tr>` +
+    dct.cases.map((c, i) => {
+      const l = lsb.cases[i];
+      const name = `${KINDS.find((k) => k.kind === c.attack).short} ${c.label}`;
+      return `<tr><td>${escHTML(name)}</td><td>${l.ber.toFixed(4)} ${verdict(l).text.slice(0, 1)}</td><td>${c.ber.toFixed(4)} ${verdict(c).text.slice(0, 1)}</td><td>${l.rawBer.toFixed(4)}</td><td>${c.rawBer.toFixed(4)}</td></tr>`;
+    }).join("");
+}
+</script>
+</body>
+</html>

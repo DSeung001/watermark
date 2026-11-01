@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LSB 워터마크 시뮬레이터</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <nav class="nav" aria-label="페이지"><a href="/" aria-current="page">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a></nav>
+  <h1>LSB 워터마크 시뮬레이터</h1>
+  <form id="form">
+    <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off">
+    <button type="submit">워터마크 삽입</button>
+  </form>
+  <div class="summary" id="summary"></div>
+
+  <div id="out" hidden>
+    <section>
+      <h2><span class="num">1</span>넣기 전 / 넣은 후</h2>
+      <p class="muted" id="whereText"></p>
+      <div class="pair">
+        <figure><div class="frame"><img id="imgOrig" alt="워터마크 넣기 전"><div class="box" id="box1"></div></div><figcaption>넣기 전</figcaption></figure>
+        <figure><div class="frame"><img id="imgWm" alt="워터마크 넣은 후"><div class="box" id="box2"><span>데이터</span></div></div><figcaption>넣은 후</figcaption></figure>
+      </div>
+      <div class="strip">
+        <canvas id="strip"></canvas>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--cell)"></span>데이터 자리, 값 그대로 (넣을 비트가 원래 LSB와 같음)</span>
+          <span><span class="sw" style="background:var(--mark)"></span>값이 ±1 바뀐 픽셀</span>
+        </div>
+        <figcaption id="stripCap"></figcaption>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span>저장 방식: LSB 치환</h2>
+      <p>메시지 앞에 길이 4바이트를 붙이고, 그 비트를 (0,0) 픽셀부터 <b class="R">R</b> → <b class="G">G</b> → <b class="B">B</b> 채널의 <b>마지막 비트(LSB)</b>에 하나씩 덮어씁니다. Alpha(투명도)는 건드리지 않습니다.</p>
+      <div class="layout" id="layout"></div>
+      <div class="layout-desc" id="layoutDesc"></div>
+      <h3 style="font-size:15px;margin:0 0 6px" id="exTitle"></h3>
+      <div class="tbl-wrap"><table id="exTable"></table></div>
+      <div class="rule">새 값 = (원래 값 &amp; 1111111<b>0</b>) | 넣을 비트 &nbsp;→ 앞 7비트는 그대로, 변화는 최대 ±1</div>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span>읽을 때: 어떤 값이 워터마크인가</h2>
+      <p>픽셀 값 자체에는 "이건 워터마크"라는 표시가 없습니다. 넣는 쪽과 읽는 쪽이 <b>같은 규칙</b>을 알고 있어서 구분합니다.</p>
+      <ol class="read">
+        <li><b>어디서</b>: (0,0)부터 행 방향, 각 픽셀의 R → G → B 값을 차례로 봅니다. Alpha는 건너뜁니다.</li>
+        <li><b>무엇을</b>: 각 값에서 마지막 1비트(LSB)만 꺼냅니다. 나머지 7비트는 원래 그림이라 무시합니다.</li>
+        <li><b>얼마나</b>: 처음 32비트를 길이로 읽습니다.
+          <div class="bits" id="hdrBits"></div>
+        </li>
+        <li><b>나머지</b>: 길이만큼(<span id="msgBitsText"></span>)만 더 읽고 멈춥니다. 8비트씩 끊어서 문자로 바꿉니다.
+          <div class="bits" id="msgBits"></div>
+          <div class="result" id="decoded"></div>
+        </li>
+      </ol>
+      <p class="note" id="limit"></p>
+    </section>
+
+    <section>
+      <h2>평가 지표</h2>
+      <div class="tbl-wrap"><table class="metrics" id="metrics"></table></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const bin8 = (n) => n.toString(2).padStart(8, "0");
+const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const printable = (b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : "·");
+const SHOW_MSG_BYTES = 4;
+
+$("imgOrig").src = "/img/original.png";
+$("form").addEventListener("submit", (e) => { e.preventDefault(); run(); });
+run();
+
+async function run() {
+  const res = await fetch("/api/embed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: $("msg").value }),
+  });
+  const d = await res.json();
+  if (!res.ok) { $("summary").innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
+  render(d);
+  $("out").hidden = false;
+}
+
+// i번째 비트가 들어가는 픽셀 좌표와 채널
+function bitPos(i, w) {
+  const p = Math.floor(i / 3);
+  return { x: p % w, y: Math.floor(p / w), ch: "RGB"[i % 3] };
+}
+const posText = (i, w) => { const p = bitPos(i, w); return `(${p.x},${p.y}) ${p.ch}`; };
+
+function render(d) {
+  const W = d.width, t = d.trace;
+  const lastBit = d.usedBits - 1;
+  const lastPx = bitPos(lastBit, W);
+
+  $("summary").innerHTML =
+    `추출 <b>${esc(d.extracted)}</b> ${d.match ? "✓" : "✗"} · ${d.usedPixels}픽셀 사용 · PSNR ${d.psnr == null ? "∞" : d.psnr.toFixed(1)} dB`;
+
+  // ① 위치
+  const rows = lastPx.y + 1;
+  $("whereText").textContent =
+    `데이터는 왼쪽 위 (0,0) ~ (${lastPx.x},${lastPx.y}) 픽셀, 총 ${d.usedPixels}개에만 들어 있습니다. 전체 ${(W * d.height).toLocaleString()}픽셀 중 ${(d.usedPixels / (W * d.height) * 100).toFixed(3)}%라 두 이미지는 눈으로 구분되지 않습니다.`;
+  for (const id of ["box1", "box2"]) {
+    const box = $(id);
+    box.style.width = (rows > 1 ? 100 : (d.usedPixels / W) * 100) + "%";
+    box.style.height = (rows / d.height) * 100 + "%";
+  }
+  $("imgWm").src = d.watermarked;
+  drawStrip(d);
+
+  // ② 저장 레이아웃
+  const hdrPct = (32 / d.usedBits) * 100;
+  $("layout").innerHTML =
+    `<div class="h" style="flex:0 0 ${Math.max(hdrPct, 18)}%">길이 32비트</div>` +
+    `<div class="m">메시지 ${d.payloadBytes}바이트 = ${d.payloadBytes * 8}비트</div>`;
+  $("layoutDesc").innerHTML =
+    `<span>${posText(0, W)} ~ ${posText(31, W)}</span>` +
+    (d.payloadBytes ? `<span>${posText(32, W)} ~ ${posText(lastBit, W)}</span>` : "");
+
+  const msgBytes = new TextEncoder().encode(d.message);
+  if (msgBytes.length) {
+    const b0 = msgBytes[0];
+    $("exTitle").innerHTML = `예: 첫 글자 <code>${esc(printable(b0))}</code> = 0x${hex2(b0)} = <code>${bin8(b0)}</code> 를 넣는 과정`;
+    const steps = t.filter((s) => s.section === "payload" && s.byte === 0);
+    $("exTable").innerHTML =
+      `<tr><th>넣을 비트</th><th>위치</th><th>원래 값</th><th>새 값</th><th>변화</th></tr>` +
+      steps.map((s) => {
+        const before = bin8(s.before), after = bin8(s.after);
+        const changed = s.before !== s.after;
+        return `<tr><td><b>${s.bit}</b></td><td>(${s.x},${s.y}) <b class="${s.ch}">${s.ch}</b></td>` +
+          `<td>${before.slice(0, 7)}<span class="lsb">${before[7]}</span> <span class="muted">(${s.before})</span></td>` +
+          `<td>${after.slice(0, 7)}<span class="lsb">${after[7]}</span> <span class="muted">(${s.after})</span></td>` +
+          `<td>${changed ? `<span class="chg">${s.after > s.before ? "+1" : "−1"}</span>` : `<span class="muted">0</span>`}</td></tr>`;
+      }).join("");
+  } else {
+    $("exTitle").textContent = "메시지가 비어 있어 길이 헤더(0)만 들어갔습니다.";
+    $("exTable").innerHTML = "";
+  }
+
+  // ③ 읽기: trace의 비트를 그대로 다시 읽는다
+  const byteAt = (section, idx) => {
+    const bits = t.filter((s) => s.section === section && s.byte === idx).map((s) => s.bit);
+    return { bits: bits.join(""), val: parseInt(bits.join(""), 2) };
+  };
+  const hdr = [0, 1, 2, 3].map((i) => byteAt("header", i));
+  const len = hdr.reduce((acc, h) => acc * 256 + h.val, 0);
+  $("hdrBits").innerHTML =
+    hdr.map((h) => `<span class="grp h">${h.bits}</span>`).join("") +
+    `<span class="grp" style="align-self:center">= <b>${len}</b>바이트</span>`;
+
+  $("msgBitsText").textContent = `${len} × 8 = ${len * 8}비트`;
+  const shown = Math.min(len, SHOW_MSG_BYTES);
+  $("msgBits").innerHTML =
+    Array.from({ length: shown }, (_, i) => {
+      const b = byteAt("payload", i);
+      return `<span class="grp m">${b.bits}<small>${esc(printable(b.val))}</small></span>`;
+    }).join("") +
+    (len > shown ? `<span class="grp" style="align-self:center">… ${len - shown}바이트 더</span>` : "");
+  $("decoded").textContent = len ? `→ ${d.extracted}` : "→ (빈 메시지)";
+
+  $("limit").textContent =
+    `${posText(lastBit, W)} 이후 픽셀은 읽지 않습니다. 길이 헤더가 어디서 끝나는지 알려 주기 때문입니다. ` +
+    `반대로 말하면 이 규칙만 알면 누구나 읽고 지울 수 있고, 워터마크가 없는 이미지를 읽어도 그냥 숫자가 나옵니다. ` +
+    `이 원본이라면 첫 행이 투명(RGB 0)이라 길이 0으로 읽힙니다. 진짜 워터마크인지 확인할 방법이 없다는 점이 LSB 방식의 한계입니다.`;
+
+  const metricRows = [
+    ["PSNR", d.psnr == null ? "∞ dB" : `${d.psnr.toFixed(2)} dB`, "이미지 품질", "원본 대비 픽셀 오차. 40dB 이상이면 눈으로 차이를 느끼기 어려움"],
+    ["SSIM", d.ssim.toFixed(7), "구조적 유사성", "밝기·대비·구조가 얼마나 같은지. 1이면 동일"],
+    ["BER", d.ber.toFixed(4), "워터마크 복원 정확도",
+      "추출한 비트 중 틀린 비율. 지금은 변형(노이즈·압축·크롭 등)을 가하지 않고 그대로 읽었으므로 0이 당연한 값. 공격을 넣는 다음 편부터 의미가 생김"],
+    ["Capacity", `${d.payloadBytes} / ${d.capacity.toLocaleString()} bytes`, "삽입 용량",
+      `사용 ${((d.payloadBytes / d.capacity) * 100).toFixed(4)}% · 픽셀당 3비트(R·G·B LSB)`],
+  ];
+  $("metrics").innerHTML =
+    `<tr><th>지표</th><th>값</th><th>측정 대상</th><th>해석</th></tr>` +
+    metricRows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("");
+}
+
+// 데이터 영역(첫 행 일부)을 확대해서, 데이터 자리와 실제로 값이 바뀐 픽셀을 칠한다.
+// 브라우저 canvas는 투명 픽셀의 RGB를 0으로 만들어 버리므로 서버가 보낸 trace로 판단한다.
+function drawStrip(d) {
+  const W = d.width, t = d.trace;
+  const tracedPx = Math.ceil(t.length / 3);
+  const cols = Math.min(W, Math.max(32, Math.ceil(Math.min(tracedPx, W) / 8) * 8 + 8));
+  const rows = Math.min(Math.ceil(tracedPx / W), 4);
+  const changed = new Set();
+  for (const s of t) if (s.before !== s.after) changed.add(s.y * W + s.x);
+
+  const css = getComputedStyle(document.documentElement);
+  const cell = 12, gap = 2;
+  const cv = $("strip");
+  cv.width = cols * cell;
+  cv.height = rows * cell;
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * W + x;
+      if (idx >= d.usedPixels) {
+        ctx.strokeStyle = css.getPropertyValue("--line");
+        ctx.strokeRect(x * cell + 0.5, y * cell + 0.5, cell - gap, cell - gap);
+        continue;
+      }
+      ctx.fillStyle = css.getPropertyValue(changed.has(idx) ? "--mark" : "--cell");
+      ctx.fillRect(x * cell, y * cell, cell - gap, cell - gap);
+    }
+  }
+  $("stripCap").textContent =
+    `왼쪽 위 ${cols}×${rows} 픽셀 확대. 칸 하나가 픽셀 하나입니다. 데이터 자리 ${d.usedPixels}개 중 ${changed.size}개만 실제로 값이 바뀌었습니다` +
+    (tracedPx < d.usedPixels ? ` (메시지가 길어 앞쪽 ${tracedPx}픽셀만 표시)` : "") + ".";
+}
+</script>
+</body>
+</html>
