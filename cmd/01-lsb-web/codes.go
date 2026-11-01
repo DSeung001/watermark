@@ -26,6 +26,7 @@ type codec struct {
 	correctable int // RS만: 고칠 수 있는 바이트 수
 	decode      func(voted []byte) (msg []byte, fixed int, failed bool)
 	trace       func(voted []byte) *ecc.RSTrace // 단계별 기록이 필요할 때만 설정한다
+	single      bool                            // 다수결 없이 첫 복사본만 읽는다
 }
 
 func voteCodec(payload []byte) codec {
@@ -98,7 +99,7 @@ type recoveryMethod struct {
 	Key         string         `json:"key"`
 	Name        string         `json:"name"`
 	CodedBits   int            `json:"codedBits"`
-	Repeat      float64        `json:"repeat"` // 코드 전체가 반복된 횟수
+	Repeat      float64        `json:"repeat"` // 읽는 코드 복사본 수
 	Parity      int            `json:"parity"`
 	Correctable int            `json:"correctable"`
 	PSNR        *float64       `json:"psnr"`
@@ -126,12 +127,16 @@ func (s *server) evaluateCodec(c codec, method string, strength float64) (recove
 		PSNR: finite(metrics.PSNR(s.orig, sc.raw)),
 		SSIM: metrics.SSIM(s.orig, sc.raw),
 	}
+	read := sc.read
+	if c.single {
+		read, out.Repeat = sc.first, 1
+	}
 	for _, ac := range attack.Cases {
 		res, err := attack.Apply(sc.wm, ac)
 		if err != nil {
 			return recoveryMethod{}, err
 		}
-		t := sc.read(res.Image)
+		t := read(res.Image)
 		voted := t.Bytes()
 		codedErrs, codedTotal := t.Errors(c.coded)
 		msg, fixed, failed := c.decode(voted)

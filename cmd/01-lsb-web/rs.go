@@ -36,7 +36,7 @@ type rsScheme struct {
 	Name    string           `json:"name"`
 	Unit    string           `json:"unit"`
 	Slots   int              `json:"slots"`
-	Methods []recoveryMethod `json:"methods"` // 다수결, RS 순서
+	Methods []recoveryMethod `json:"methods"` // RS만, 다수결만, 다수결 + RS 순서
 }
 
 type rsResponse struct {
@@ -69,6 +69,9 @@ func (s *server) handleRS(w http.ResponseWriter, r *http.Request) {
 		t, _ := ecc.RSDecodeTrace(voted, rsParity) // 실패도 t에 기록된다
 		return &t
 	}
+	// RS만: 다수결 + RS와 같은 이미지에서 첫 복사본만 읽어 투표 없이 복호한다.
+	rsOnly := rs
+	rsOnly.key, rsOnly.single = "rsonly", true
 
 	b := s.orig.Bounds()
 	resp := rsResponse{
@@ -88,7 +91,7 @@ func (s *server) handleRS(w http.ResponseWriter, r *http.Request) {
 		{"lsb", "LSB", "자리"}, {"dct", "DCT", "블록"},
 	} {
 		out := rsScheme{Key: sc.key, Name: sc.name, Unit: sc.unit}
-		for _, c := range []codec{voteCodec(payload), rs} {
+		for _, c := range []codec{rsOnly, voteCodec(payload), rs} {
 			m, err := s.evaluateCodec(c, sc.key, dct.DefaultStrength)
 			if err != nil {
 				httpError(w, http.StatusBadRequest, err.Error())

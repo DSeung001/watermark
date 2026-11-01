@@ -93,7 +93,8 @@ type scheme struct {
 	frame   int // 한 번 반복되는 비트 수. LSB는 길이 헤더를 포함한다
 	repeat  int
 	read    func(*image.NRGBA) vote.Tally
-	header  func(*image.NRGBA) uint32 // LSB만
+	first   func(*image.NRGBA) vote.Tally // 첫 복사본만 읽는다
+	header  func(*image.NRGBA) uint32     // LSB만
 	samples func(*image.NRGBA) []sample
 	errMap  func(*image.NRGBA) *image.NRGBA
 }
@@ -139,6 +140,7 @@ func (s *server) buildLSB(payload []byte) (*scheme, error) {
 		method: "lsb", unit: "자리", payload: payload, raw: raw, wm: wm,
 		slots: len(pos), frame: frameBits, repeat: len(pos) / frameBits,
 		read:   func(img *image.NRGBA) vote.Tally { return lsb.ExtractSpread(img, pos, len(payload)) },
+		first:  func(img *image.NRGBA) vote.Tally { return lsb.ExtractSpread(img, pos[:frameBits], len(payload)) },
 		header: func(img *image.NRGBA) uint32 { return lsb.SpreadHeader(img, pos) },
 		samples: func(img *image.NRGBA) []sample {
 			out := make([]sample, 0, sampleCount)
@@ -190,7 +192,8 @@ func (s *server) buildDCT(payload []byte, strength float64) (*scheme, error) {
 	return &scheme{
 		method: "dct", unit: "블록", payload: payload, raw: raw, wm: wm,
 		slots: len(blocks), frame: nBits, repeat: len(blocks) / nBits,
-		read: func(img *image.NRGBA) vote.Tally { return dct.Extract(img, blocks, len(payload)) },
+		read:  func(img *image.NRGBA) vote.Tally { return dct.Extract(img, blocks, len(payload)) },
+		first: func(img *image.NRGBA) vote.Tally { return dct.Extract(img, blocks[:nBits], len(payload)) },
 		samples: func(img *image.NRGBA) []sample {
 			out := make([]sample, 0, sampleCount)
 			for i := range sampleCount {

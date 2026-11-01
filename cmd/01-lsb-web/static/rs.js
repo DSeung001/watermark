@@ -1,10 +1,12 @@
-// LSB, DCT × 다수결, RS 비교와 RS 복호 단계별 표시. T는 서버에서 36으로 고정한다.
+// LSB, DCT × RS만, 다수결만, 다수결 + RS 비교와 RS 복호 단계별 표시. T는 서버에서 36으로 고정한다.
 const $ = (id) => document.getElementById(id);
 const count = (v) => v.toLocaleString();
 const dB = (v) => (v == null ? "∞" : `${v.toFixed(2)} dB`);
 const hex = (b) => b.toString(16).padStart(2, "0");
 const decode = (s) => (s ? Uint8Array.from(atob(s), (c) => c.charCodeAt(0)) : new Uint8Array());
 const caseName = (c) => `${KINDS.find((k) => k.kind === c.attack).short} ${c.label}`;
+const LABELS = { rsonly: "RS만", vote: "다수결만", rs: "다수결 + RS" };
+const method = (sc, key) => sc.methods.find((m) => m.key === key);
 let data = null, token = 0;
 
 // RS 결과는 복호기의 판단과 실제 일치 여부를 나눠 표시한다.
@@ -14,6 +16,9 @@ function rsVerdict(c) {
   if (c.fixed === 0) return { cls: "bad", text: "✗ 오류 미검출" };
   return { cls: "bad", text: "✗ 오정정" };
 }
+
+const copies = (v) => (Number.isInteger(v) ? count(v) : `약 ${v < 100 ? v.toFixed(2) : count(Math.round(v))}`);
+const mark = (m, c) => (m.key === "vote" ? verdict(c) : rsVerdict(c));
 
 function renderSettings(d) {
   const s = d.settings, [lsb, dct] = d.schemes;
@@ -37,10 +42,10 @@ function renderSettings(d) {
     ["", "생성원", "α = 2"],
     ["", "생성 다항식의 근", `α⁰ … α^${s.parity - 1} (첫 근의 지수 0)`],
   ];
-  $("setDesc").textContent = `코드와 같은 값을 서버에서 받아 표시합니다. 다수결과 RS는 같은 자리 전체를 쓰고, RS는 코드워드를 반복 삽입한 뒤 다수결로 ${s.n}바이트를 만들어 복호합니다.`;
+  $("setDesc").textContent = `코드와 같은 값을 서버에서 받아 표시합니다. 세 방식 모두 같은 자리 전체에 데이터를 반복 삽입합니다. RS만은 첫 복사본 ${s.n * 8}비트만 읽어 바로 복호하고, 다수결 + RS는 복사본을 투표로 합친 ${s.n}바이트를 복호합니다.`;
   $("settings").innerHTML = `<tr><th>구분</th><th>항목</th><th>값</th></tr>` +
     rows.map(([g, k, v]) => `<tr><td>${g}</td><td>${k}</td><td>${v}</td></tr>`).join("");
-  const baseBits = s.baseN * 8, rsDct = dct.methods[1];
+  const baseBits = s.baseN * 8, rsDct = method(dct, "rs");
   $("layout").innerHTML = `<div class="m" style="flex:${s.k}">메시지 ${s.k}바이트</div><div class="h" style="flex:${s.parity}">패리티 ${s.parity}바이트</div>`;
   const fit = baseBits > dct.slots ? `${count(baseBits)}비트라 DCT ${count(dct.slots)}블록에 들어가지 않습니다` : `${count(baseBits)}비트입니다`;
   $("setNote").textContent = `범용 값 RS(${s.baseN},${s.baseK})의 패리티 ${s.parity}바이트를 그대로 쓰고 코드워드만 줄였습니다. 메시지 앞에 0을 ${s.baseK - s.k}바이트 채워 부호화한 뒤 그 0을 보내지 않는 것과 같습니다. RS(${s.baseN},${s.baseK}) 코드워드는 ${fit}. ` +
@@ -51,39 +56,75 @@ function renderSummary(d) {
   const n = d.schemes[0].methods[0].cases.length;
   const rows = d.schemes.flatMap((sc) => sc.methods.map((m) => {
     const avg = m.cases.reduce((a, c) => a + c.ber, 0) / n;
-    const label = m.key === "rs" ? `다수결 + ${m.name}` : "다수결";
-    return `<tr><td>${sc.name} ${escHTML(label)}</td><td>${count(m.codedBits)}비트</td><td>${count(+m.repeat.toFixed(2))}회</td>` +
+    const label = LABELS[m.key];
+    return `<tr><td>${sc.name} ${escHTML(label)}</td><td>${count(m.codedBits)}비트</td><td>${copies(m.repeat)}</td>` +
       `<td>${dB(m.psnr)}</td><td>${num(m.ssim, 4)}</td><td>${m.cases.filter((c) => c.match).length} / ${n}</td><td>${num(avg, 3)}</td></tr>`;
   }));
-  $("sumTable").innerHTML = `<tr><th>방식</th><th>반복 단위</th><th>반복 횟수</th><th>PSNR</th><th>SSIM</th><th>완전 복원</th><th>평균 메시지 BER</th></tr>` + rows.join("");
-  $("sumNote").textContent = "반복 단위는 부호화한 데이터 길이입니다. LSB는 여기에 길이 헤더가 더 붙습니다. 자리 수가 같으므로 코드워드가 길수록 반복 횟수는 줄어듭니다.";
+  $("sumTable").innerHTML = `<tr><th>방식</th><th>복사본 길이</th><th>읽는 복사본 수</th><th>PSNR</th><th>SSIM</th><th>완전 복원</th><th>평균 복구 후 BER</th></tr>` + rows.join("");
+  $("sumNote").textContent = "복사본 길이는 부호화한 데이터 길이이고, LSB는 여기에 길이 헤더가 더 붙습니다. 자리 수가 같으므로 코드워드가 길수록 복사본 수는 줄어듭니다. RS만과 다수결 + RS는 같은 이미지를 쓰고 읽는 방법만 다릅니다.";
+}
+
+const BER_MAX = 0.6; // 막대 눈금의 끝. 0.5(무작위 추측)가 83.333%에 온다
+
+// 복구 전(빈 원)에서 복구 후(채운 원)로 이어지는 한 줄
+function berRow(name, c, v) {
+  const before = Math.min(c.codedBer / BER_MAX, 1) * 100, after = Math.min(c.ber / BER_MAX, 1) * 100;
+  return `<div class="rs-db" title="${escHTML(name)}: 복구 전 ${num(c.codedBer, 3)}, 복구 후 ${num(c.ber, 3)}, ${escHTML(v.text)}">
+    <span class="rs-db-name">${escHTML(name)}</span>
+    <span class="rs-db-track"><i class="vs-chance"></i>
+      <i class="rs-db-line" style="left:${Math.min(before, after)}%;width:${Math.abs(before - after)}%"></i>
+      <i class="rs-db-dot before" style="left:${before}%"></i><i class="rs-db-dot after" style="left:${after}%"></i></span>
+    <span class="rs-db-val">${num(c.codedBer, 3)} → <b>${num(c.ber, 3)}</b> <span class="st ${v.cls}">${v.text.slice(0, 1)}</span></span>
+  </div>`;
+}
+
+function berChart(sc) {
+  const rows = sc.methods[0].cases.map((c0, idx) =>
+    `<div class="rs-dbt-r"><span class="rs-dbt-c">${escHTML(caseName(c0))}</span>` +
+    sc.methods.map((m) => berRow(LABELS[m.key], m.cases[idx], mark(m, m.cases[idx]))).join("") + `</div>`).join("");
+  return `<h3>복구 전후 BER</h3>
+    <p class="muted">복구 전은 자리 하나하나를 따로 읽은 오류율이고, 복구 후는 최종 메시지의 오류율입니다. 왼쪽 끝이 0이며 복구 후 값이 0에 가까울수록 잘 복구한 것입니다.</p>
+    <div class="legend rs-db-legend">
+      <span><i class="rs-db-dot before"></i>복구 전</span>
+      <span><i class="rs-db-dot after"></i>복구 후</span>
+      <span><i class="rs-db-chance"></i>0.5 무작위 추측</span>
+      <span><b class="st ok">✓</b> 완전 복원</span>
+      <span><b class="st part">△</b> 일부 오류</span>
+      <span><b class="st bad">✗</b> 복원 실패</span>
+    </div>
+    <div class="rs-dbt">
+      <div class="rs-dbt-r rs-dbt-h"><span></span>${sc.methods.map((m) => `<span>${LABELS[m.key]}</span>`).join("")}</div>
+      ${rows}
+    </div>`;
+}
+
+function detailRow(m, c, d, head) {
+  const v = mark(m, c), voted = m.key !== "rsonly", coded = m.key !== "vote";
+  const over = coded && c.byteErrors > d.settings.correctable ? " class=\"chg\"" : "";
+  return `<tr>${head}<td>${LABELS[m.key]}</td><td>${num(c.codedBer, 3)}</td>` +
+    `<td>${voted ? `${c.votedErrors} / ${m.codedBits}` : "투표 없음"}</td>` +
+    `<td${over}>${coded ? `${c.byteErrors} / ${d.settings.n}` : "-"}</td>` +
+    `<td>${!coded ? "-" : c.failed ? "실패" : `${c.fixed}바이트`}</td>` +
+    `<td>${c.errors} / ${c.bits}</td><td>${num(c.ber, 3)}</td><td><b class="st ${v.cls}">${escHTML(v.text)}</b></td></tr>`;
 }
 
 function renderScheme(sc, i, d) {
-  const [v, r] = sc.methods, t = d.settings.correctable;
-  const rows = v.cases.map((c0, idx) => {
-    const c1 = r.cases[idx], m0 = verdict(c0), m1 = rsVerdict(c1);
-    const over = c1.byteErrors > t ? " class=\"chg\"" : "";
-    return `<tr><th scope="row">${escHTML(caseName(c0))}</th>` +
-      `<td>${num(c0.codedBer, 3)}</td><td>${c0.errors} / ${c0.bits}</td><td>${num(c0.ber, 3)}</td><td class="rs-gap"><b class="st ${m0.cls}">${escHTML(m0.text)}</b></td>` +
-      `<td>${num(c1.codedBer, 3)}</td><td>${c1.votedErrors} / ${r.codedBits}</td><td${over}>${c1.byteErrors} / ${d.settings.n}</td><td>${c1.failed ? "실패" : `${c1.fixed}바이트`}</td>` +
-      `<td>${c1.errors} / ${c1.bits}</td><td>${num(c1.ber, 3)}</td><td><b class="st ${m1.cls}">${escHTML(m1.text)}</b></td></tr>`;
-  }).join("");
-  const strs = v.cases.map((c0, idx) => {
-    const c1 = r.cases[idx];
-    return `<tr><th scope="row">${escHTML(caseName(c0))}</th><td>${escHTML(showText(c0.extracted))}</td><td>${escHTML(showText(c1.extracted))}</td></tr>`;
-  }).join("");
+  const first = sc.methods[0], vote = method(sc, "vote"), rs = method(sc, "rs");
+  const rows = first.cases.map((c0, idx) => sc.methods.map((m, n) => detailRow(m, m.cases[idx], d,
+    n === 0 ? `<th scope="row" rowspan="${sc.methods.length}">${escHTML(caseName(c0))}</th>` : "")).join("")).join("");
+  const strs = first.cases.map((c0, idx) =>
+    `<tr><th scope="row">${escHTML(caseName(c0))}</th>${sc.methods.map((m) => `<td>${escHTML(showText(m.cases[idx].extracted))}</td>`).join("")}</tr>`).join("");
   return `<section>
     <h2><span class="num">${i + 3}</span>${sc.name} 훼손 조건별 결과</h2>
-    <p class="muted">${sc.name}에 메시지는 약 ${count(+v.repeat.toFixed(2))}회, RS 코드워드는 약 ${count(+r.repeat.toFixed(2))}회 반복됩니다. RS 정정 한도는 ${t}바이트입니다.</p>
+    <p class="muted">${sc.name}에 메시지는 약 ${count(+vote.repeat.toFixed(2))}회, ${escHTML(rs.name)} 코드워드는 약 ${count(+rs.repeat.toFixed(2))}회 반복됩니다. RS만은 첫 복사본 하나만 읽습니다. RS 정정 한도는 ${d.settings.correctable}바이트입니다.</p>
+    ${berChart(sc)}
+    <h3>상세 수치</h3>
     <div class="tbl-wrap"><table class="rs-cmp">
-      <tr><th></th><th colspan="4" class="rs-gap">다수결</th><th colspan="7">다수결 + ${escHTML(r.name)}</th></tr>
-      <tr><th>훼손 조건</th><th>복구 전 BER</th><th>메시지 오류 비트</th><th>메시지 BER</th><th class="rs-gap">결과</th>
-        <th>복구 전 BER</th><th>투표 후 오류 비트</th><th>RS 전 틀린 바이트</th><th>RS 정정</th><th>메시지 오류 비트</th><th>메시지 BER</th><th>결과</th></tr>
+      <tr><th>훼손 조건</th><th>방식</th><th>복구 전 BER</th><th>투표 후 오류 비트</th><th>RS 입력 틀린 바이트</th><th>RS 정정</th><th>복구 후 오류 비트</th><th>복구 후 BER</th><th>결과</th></tr>
       ${rows}
     </table></div>
     <h3>추출한 문자열</h3>
-    <div class="tbl-wrap"><table class="rs-strs"><tr><th>훼손 조건</th><th>다수결</th><th>다수결 + ${escHTML(r.name)}</th></tr>${strs}</table></div>
+    <div class="tbl-wrap"><table class="rs-strs"><tr><th>훼손 조건</th>${sc.methods.map((m) => `<th>${LABELS[m.key]}</th>`).join("")}</tr>${strs}</table></div>
     <div class="legend">
       <span><b class="st bad">정정 실패</b> 복호기가 고칠 수 없다고 판단</span>
       <span><b class="st bad">오정정</b> 다른 유효 코드워드로 잘못 고침</span>
@@ -186,13 +227,14 @@ function stageData(d, c) {
 }
 
 // 수식과 코드는 internal/ecc/rs.go의 구현과 같은 표기를 쓴다.
-function stageDocs(s) {
+function stageDocs(s, key) {
+  const source = key === "rsonly" ? `첫 복사본에서 읽은 ${s.n}바이트` : `다수결로 만든 ${s.n}바이트`;
   const last = s.parity - 1;
   return [
     {
       title: "수신한 코드워드",
       body: `<div class="rule">r(x) = c(x) + e(x)<br>c(x) = m(x)·x<sup>${s.parity}</sup> + (m(x)·x<sup>${s.parity}</sup> mod g(x))<br>g(x) = (x − α<sup>0</sup>)(x − α<sup>1</sup>) … (x − α<sup>${last}</sup>)</div>
-        <p>다수결로 만든 ${s.n}바이트가 수신어 r입니다. c는 보낸 코드워드, e는 오류입니다. GF(2⁸)에서 덧셈은 XOR입니다.</p>`,
+        <p>${source}가 수신어 r입니다. c는 보낸 코드워드, e는 오류입니다. GF(2⁸)에서 덧셈은 XOR입니다.</p>`,
     },
     {
       title: "신드롬 계산",
@@ -249,22 +291,23 @@ recheck, ok := rsSyndromes(out, nsym) // 모두 0이어야 성공`),
 }
 
 function renderTrace() {
-  const d = data, sc = d.schemes[+$("traceScheme").value], rs = sc.methods[1], c = rs.cases[+$("traceCase").value];
+  const d = data, sc = d.schemes[+$("traceScheme").value], key = $("traceMethod").value;
+  const c = method(sc, key).cases[+$("traceCase").value];
   const v = rsVerdict(c), s = stageData(d, c);
-  $("traceSum").innerHTML = `${sc.name}, ${escHTML(caseName(c))}: 다수결 후 <b>${c.byteErrors}바이트</b> 틀림, 정정 한도 <b>${d.settings.correctable}바이트</b>, 결과 <b class="st ${v.cls}">${escHTML(v.text)}</b>`;
-  $("stages").innerHTML = stageDocs(d.settings).map((doc, i) =>
+  $("traceSum").innerHTML = `${sc.name}, ${LABELS[key]}, ${escHTML(caseName(c))}: RS 입력 <b>${c.byteErrors}바이트</b> 틀림, 정정 한도 <b>${d.settings.correctable}바이트</b>, 결과 <b class="st ${v.cls}">${escHTML(v.text)}</b>`;
+  $("stages").innerHTML = stageDocs(d.settings, key).map((doc, i) =>
     `<li><h3>${doc.title}</h3><div class="rs-stage"><div class="rs-doc">${doc.body}</div><div class="rs-data">${s[i]}</div></div></li>`).join("");
 }
 
 function fillCases(keep) {
-  const cases = data.schemes[+$("traceScheme").value].methods[1].cases;
+  const cases = method(data.schemes[+$("traceScheme").value], $("traceMethod").value).cases;
   $("traceCase").innerHTML = cases.map((c, i) => `<option value="${i}">${escHTML(caseName(c))} (${escHTML(rsVerdict(c).text)})</option>`).join("");
   if (keep != null) $("traceCase").value = keep;
 }
 
 // 기본 표시는 실제로 정정에 성공한 DCT 조건 중 가장 많이 고친 조건이다.
 function defaultCase(d) {
-  const i = d.schemes.length - 1, cases = d.schemes[i].methods[1].cases;
+  const i = d.schemes.length - 1, cases = method(d.schemes[i], "rs").cases;
   let best = 0, fixed = -1;
   cases.forEach((c, n) => { if (c.match && c.fixed > fixed) { best = n; fixed = c.fixed; } });
   return [i, best];
@@ -277,6 +320,7 @@ function render(d) {
   $("schemes").innerHTML = d.schemes.map((sc, i) => renderScheme(sc, i, d)).join("");
   $("traceNum").textContent = d.schemes.length + 3;
   $("traceScheme").innerHTML = d.schemes.map((sc, i) => `<option value="${i}">${sc.name}</option>`).join("");
+  $("traceMethod").innerHTML = ["rs", "rsonly"].map((k) => `<option value="${k}">${LABELS[k]}</option>`).join("");
   const [si, ci] = defaultCase(d);
   $("traceScheme").value = si;
   fillCases(ci);
@@ -305,5 +349,6 @@ async function run() {
 
 $("form").addEventListener("submit", (e) => { e.preventDefault(); run(); });
 $("traceScheme").addEventListener("change", () => { fillCases(); renderTrace(); });
+$("traceMethod").addEventListener("change", () => { const keep = $("traceCase").value; fillCases(keep); renderTrace(); });
 $("traceCase").addEventListener("change", renderTrace);
 run();

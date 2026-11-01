@@ -9,8 +9,8 @@
 <body>
 <main class="wide">
   <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/strength.html">강도 비교</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a><a href="/codes.html">복구 방식 비교</a><a href="/rs.html" aria-current="page">RS 복호</a></nav>
-  <h1>다수결과 Reed-Solomon 복구 비교</h1>
-  <p class="muted">같은 블로그 주소를 LSB와 DCT에 따로 넣고, 다수결만 쓴 경우와 다수결 뒤에 RS를 더한 경우를 비교합니다. 이어서 RS 복호 6단계에서 데이터가 어떻게 바뀌는지 봅니다.</p>
+  <h1>RS, 다수결, 다수결 + RS 복구 비교</h1>
+  <p class="muted">같은 블로그 주소를 LSB와 DCT에 따로 넣고, RS만 쓴 경우, 다수결만 쓴 경우, 둘을 함께 쓴 경우를 비교합니다. 이어서 RS 복호 6단계에서 데이터가 어떻게 바뀌는지 봅니다.</p>
   <form id="form">
     <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off" aria-label="숨길 메시지">
     <button type="submit">측정하기</button>
@@ -29,6 +29,13 @@
 
     <section>
       <h2><span class="num">2</span>방식별 요약</h2>
+      <div class="tbl-wrap"><table class="rs-set rs-pros">
+        <tr><th>방식</th><th>장점</th><th>단점</th></tr>
+        <tr><td>RS만 사용</td><td>바이트 오류 정정 가능</td><td>이미지에 삽입한 복사본 정보를 활용하지 못할 수 있음</td></tr>
+        <tr><td>다수결만 사용</td><td>반복 데이터로 비트 오류 감소</td><td>과반수가 틀리면 복구 불가능</td></tr>
+        <tr><td>다수결 + RS</td><td>서로 다른 두 단계에서 오류를 줄임</td><td>패리티 때문에 반복 횟수가 감소</td></tr>
+      </table></div>
+      <h3>측정값</h3>
       <p class="muted">삽입 품질은 원본 대비 값입니다. 완전 복원은 메시지가 원본과 정확히 일치한 훼손 조건의 수입니다.</p>
       <div class="tbl-wrap"><table class="code-t" id="sumTable"></table></div>
       <p class="note" style="margin-top:12px" id="sumNote"></p>
@@ -38,9 +45,10 @@
 
     <section>
       <h2><span class="num" id="traceNum">5</span>RS 복호 6단계</h2>
-      <p class="muted">아래 값은 선택한 조건에서 다수결로 만든 코드워드를 복호하며 기록한 실제 값입니다. 바이트는 16진수이고, 칸 위의 작은 숫자는 코드워드 인덱스입니다.</p>
+      <p class="muted">아래 값은 선택한 조건에서 RS 복호기에 들어간 코드워드를 복호하며 기록한 실제 값입니다. 바이트는 16진수이고, 칸 위의 작은 숫자는 코드워드 인덱스입니다.</p>
       <div class="code-controls">
         <label>워터마크 방식 <select id="traceScheme"></select></label>
+        <label>복구 방식 <select id="traceMethod"></select></label>
         <label>훼손 조건 <select id="traceCase"></select></label>
       </div>
       <p class="summary" id="traceSum"></p>
