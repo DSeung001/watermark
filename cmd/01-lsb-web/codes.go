@@ -80,26 +80,30 @@ func (s *server) codecs(payload []byte) ([]codec, error) {
 
 type recoveryCase struct {
 	attack.Case
-	CodedBER    float64      `json:"codedBer"`    // 복사본 하나하나를 본 부호 비트 오류율
-	CodedErrors int          `json:"codedErrors"` // 틀린 자리 수
-	CodedTotal  int          `json:"codedTotal"`  // 전체 자리 수
-	VotedErrors int          `json:"votedErrors"` // 다수결 후 남은 부호 비트 오류 수
-	ByteErrors  int          `json:"byteErrors"`  // 다수결 후 틀린 부호 바이트 수
-	Fixed       int          `json:"fixed"`       // 정정한 코드워드(Hamming) 또는 바이트(RS) 수
-	Failed      bool         `json:"failed"`      // RS만: 정정 한도 초과
-	BER         float64      `json:"ber"`         // 복구한 메시지의 BER
-	Errors      int          `json:"errors"`
-	Bits        int          `json:"bits"`
-	Extracted   string       `json:"extracted"`
-	Match       bool         `json:"match"`
-	Trace       *ecc.RSTrace `json:"trace,omitempty"`
+	CodedBER    float64 `json:"codedBer"`    // 복사본 하나하나를 본 부호 비트 오류율
+	CodedErrors int     `json:"codedErrors"` // 틀린 자리 수
+	CodedTotal  int     `json:"codedTotal"`  // 전체 자리 수
+	// 복사본 하나하나의 메시지 비트만 본 오류율. 복구 후 BER과 기준이 같다.
+	// 메시지가 코드 앞에 그대로 있는 방식에서만 채운다.
+	MessageRawBER *float64     `json:"messageRawBer,omitempty"`
+	VotedErrors   int          `json:"votedErrors"` // 다수결 후 남은 부호 비트 오류 수
+	ByteErrors    int          `json:"byteErrors"`  // 다수결 후 틀린 부호 바이트 수
+	Fixed         int          `json:"fixed"`       // 정정한 코드워드(Hamming) 또는 바이트(RS) 수
+	Failed        bool         `json:"failed"`      // RS만: 정정 한도 초과
+	BER           float64      `json:"ber"`         // 복구한 메시지의 BER
+	Errors        int          `json:"errors"`
+	Bits          int          `json:"bits"`
+	Extracted     string       `json:"extracted"`
+	Match         bool         `json:"match"`
+	Trace         *ecc.RSTrace `json:"trace,omitempty"`
 }
 
 type recoveryMethod struct {
 	Key         string         `json:"key"`
 	Name        string         `json:"name"`
 	CodedBits   int            `json:"codedBits"`
-	Repeat      float64        `json:"repeat"` // 읽는 코드 복사본 수
+	FrameBits   int            `json:"frameBits"` // 한 번 삽입하는 비트 수. LSB는 길이 헤더 포함
+	Repeat      float64        `json:"repeat"`    // 읽는 코드 복사본 수
 	Parity      int            `json:"parity"`
 	Correctable int            `json:"correctable"`
 	PSNR        *float64       `json:"psnr"`
@@ -122,7 +126,7 @@ func (s *server) evaluateCodec(c codec, method string, strength float64) (recove
 	}
 	bits := len(c.coded) * 8
 	out := recoveryMethod{
-		Key: c.key, Name: c.name, CodedBits: bits, Repeat: float64(sc.slots) / float64(sc.frame),
+		Key: c.key, Name: c.name, CodedBits: bits, FrameBits: sc.frame, Repeat: float64(sc.slots) / float64(sc.frame),
 		Parity: c.parity, Correctable: c.correctable,
 		PSNR: finite(metrics.PSNR(s.orig, sc.raw)),
 		SSIM: metrics.SSIM(s.orig, sc.raw),
@@ -151,6 +155,11 @@ func (s *server) evaluateCodec(c codec, method string, strength float64) (recove
 			BER: ber, Errors: int(math.Round(ber * float64(len(payload)*8))), Bits: len(payload) * 8,
 			Extracted: strings.ToValidUTF8(string(msg), "�"),
 			Match:     bytes.Equal(msg, payload),
+		}
+		if c.key != "hamming" {
+			errs, total := t.Errors(payload)
+			raw := float64(errs) / float64(total)
+			rc.MessageRawBER = &raw
 		}
 		if c.trace != nil {
 			rc.Trace = c.trace(voted)

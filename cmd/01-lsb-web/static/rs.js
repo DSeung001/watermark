@@ -17,7 +17,10 @@ function rsVerdict(c) {
   return { cls: "bad", text: "✗ 오정정" };
 }
 
-const copies = (v) => (Number.isInteger(v) ? count(v) : `약 ${v < 100 ? v.toFixed(2) : count(Math.round(v))}`);
+// 100 이상은 온전히 들어간 복사본 수로 표시한다.
+const copies = (v) => (Number.isInteger(v) ? count(v) : v < 100 ? `약 ${v.toFixed(2)}` : count(Math.floor(v)));
+const frameText = (m) => (m.frameBits > m.codedBits
+  ? `${count(m.codedBits)} + 헤더 ${m.frameBits - m.codedBits} = ${count(m.frameBits)}비트` : `${count(m.codedBits)}비트`);
 const mark = (m, c) => (m.key === "vote" ? verdict(c) : rsVerdict(c));
 
 function renderSettings(d) {
@@ -57,24 +60,24 @@ function renderSummary(d) {
   const rows = d.schemes.flatMap((sc) => sc.methods.map((m) => {
     const avg = m.cases.reduce((a, c) => a + c.ber, 0) / n;
     const label = LABELS[m.key];
-    return `<tr><td>${sc.name} ${escHTML(label)}</td><td>${count(m.codedBits)}비트</td><td>${copies(m.repeat)}</td>` +
+    return `<tr><td>${sc.name} ${escHTML(label)}</td><td>${frameText(m)}</td><td>${copies(m.repeat)}</td>` +
       `<td>${dB(m.psnr)}</td><td>${num(m.ssim, 4)}</td><td>${m.cases.filter((c) => c.match).length} / ${n}</td><td>${num(avg, 3)}</td></tr>`;
   }));
   $("sumTable").innerHTML = `<tr><th>방식</th><th>복사본 길이</th><th>읽는 복사본 수</th><th>PSNR</th><th>SSIM</th><th>완전 복원</th><th>평균 복구 후 BER</th></tr>` + rows.join("");
-  $("sumNote").textContent = "복사본 길이는 부호화한 데이터 길이이고, LSB는 여기에 길이 헤더가 더 붙습니다. 자리 수가 같으므로 코드워드가 길수록 복사본 수는 줄어듭니다. RS만과 다수결 + RS는 같은 이미지를 쓰고 읽는 방법만 다릅니다.";
+  $("sumNote").textContent = "복사본 수는 자리 수 ÷ 복사본 길이입니다. LSB는 복사본마다 길이 헤더 32비트가 붙습니다. 자리 수가 같으므로 코드워드가 길수록 복사본 수는 줄어듭니다. RS만과 다수결 + RS는 같은 이미지를 쓰고, RS만은 복사본 중 첫 번째만 읽습니다.";
 }
 
 const BER_MAX = 0.6; // 막대 눈금의 끝. 0.5(무작위 추측)가 83.333%에 온다
 
 // 복구 전(빈 원)에서 복구 후(채운 원)로 이어지는 한 줄
 function berRow(name, c, v) {
-  const before = Math.min(c.codedBer / BER_MAX, 1) * 100, after = Math.min(c.ber / BER_MAX, 1) * 100;
-  return `<div class="rs-db" title="${escHTML(name)}: 복구 전 ${num(c.codedBer, 3)}, 복구 후 ${num(c.ber, 3)}, ${escHTML(v.text)}">
+  const raw = c.messageRawBer, before = Math.min(raw / BER_MAX, 1) * 100, after = Math.min(c.ber / BER_MAX, 1) * 100;
+  return `<div class="rs-db" title="${escHTML(name)}: 복구 전 ${num(raw, 3)}, 복구 후 ${num(c.ber, 3)}, ${escHTML(v.text)}">
     <span class="rs-db-name">${escHTML(name)}</span>
     <span class="rs-db-track"><i class="vs-chance"></i>
       <i class="rs-db-line" style="left:${Math.min(before, after)}%;width:${Math.abs(before - after)}%"></i>
       <i class="rs-db-dot before" style="left:${before}%"></i><i class="rs-db-dot after" style="left:${after}%"></i></span>
-    <span class="rs-db-val">${num(c.codedBer, 3)} → <b>${num(c.ber, 3)}</b> <span class="st ${v.cls}">${v.text.slice(0, 1)}</span></span>
+    <span class="rs-db-val">${num(raw, 3)} → <b>${num(c.ber, 3)}</b> <span class="st ${v.cls}">${v.text.slice(0, 1)}</span></span>
   </div>`;
 }
 
@@ -83,7 +86,7 @@ function berChart(sc) {
     `<div class="rs-dbt-r"><span class="rs-dbt-c">${escHTML(caseName(c0))}</span>` +
     sc.methods.map((m) => berRow(LABELS[m.key], m.cases[idx], mark(m, m.cases[idx]))).join("") + `</div>`).join("");
   return `<h3>복구 전후 BER</h3>
-    <p class="muted">복구 전은 자리 하나하나를 따로 읽은 오류율이고, 복구 후는 최종 메시지의 오류율입니다. 왼쪽 끝이 0이며 복구 후 값이 0에 가까울수록 잘 복구한 것입니다.</p>
+    <p class="muted">복구 전후 모두 메시지 비트만 비교한 값입니다. 복구 전은 읽는 복사본을 하나씩 따로 본 오류율이고, 복구 후는 최종 메시지의 오류율입니다. 왼쪽 끝이 0입니다. RS 정정에 실패하면 수신값 앞부분을 그대로 쓰므로, RS만에서는 전후 값이 같습니다.</p>
     <div class="legend rs-db-legend">
       <span><i class="rs-db-dot before"></i>복구 전</span>
       <span><i class="rs-db-dot after"></i>복구 후</span>
@@ -101,7 +104,7 @@ function berChart(sc) {
 function detailRow(m, c, d, head) {
   const v = mark(m, c), voted = m.key !== "rsonly", coded = m.key !== "vote";
   const over = coded && c.byteErrors > d.settings.correctable ? " class=\"chg\"" : "";
-  return `<tr>${head}<td>${LABELS[m.key]}</td><td>${num(c.codedBer, 3)}</td>` +
+  return `<tr>${head}<td>${LABELS[m.key]}</td><td>${num(c.messageRawBer, 3)}</td><td>${coded ? num(c.codedBer, 3) : "-"}</td>` +
     `<td>${voted ? `${c.votedErrors} / ${m.codedBits}` : "투표 없음"}</td>` +
     `<td${over}>${coded ? `${c.byteErrors} / ${d.settings.n}` : "-"}</td>` +
     `<td>${!coded ? "-" : c.failed ? "실패" : `${c.fixed}바이트`}</td>` +
@@ -120,13 +123,13 @@ function renderScheme(sc, i, d) {
     ${berChart(sc)}
     <h3>상세 수치</h3>
     <div class="tbl-wrap"><table class="rs-cmp">
-      <tr><th>훼손 조건</th><th>방식</th><th>복구 전 BER</th><th>투표 후 오류 비트</th><th>RS 입력 틀린 바이트</th><th>RS 정정</th><th>복구 후 오류 비트</th><th>복구 후 BER</th><th>결과</th></tr>
+      <tr><th>훼손 조건</th><th>방식</th><th>복구 전 메시지 BER</th><th>복구 전 코드워드 BER</th><th>투표 후 오류 비트</th><th>RS 입력 틀린 바이트</th><th>RS 정정</th><th>복구 후 오류 비트</th><th>복구 후 BER</th><th>결과</th></tr>
       ${rows}
     </table></div>
     <h3>추출한 문자열</h3>
     <div class="tbl-wrap"><table class="rs-strs"><tr><th>훼손 조건</th>${sc.methods.map((m) => `<th>${LABELS[m.key]}</th>`).join("")}</tr>${strs}</table></div>
     <div class="legend">
-      <span><b class="st bad">정정 실패</b> 복호기가 고칠 수 없다고 판단</span>
+      <span><b class="st bad">정정 실패</b> 복호기가 고칠 수 없다고 판단, 수신값 앞 ${d.settings.k}바이트로 BER 계산</span>
       <span><b class="st bad">오정정</b> 다른 유효 코드워드로 잘못 고침</span>
       <span><b class="st bad">오류 미검출</b> 신드롬이 0이라 오류를 알아채지 못함</span>
     </div>

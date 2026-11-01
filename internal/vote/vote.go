@@ -36,8 +36,9 @@ func (t Tally) Bytes() []byte {
 }
 
 // Errors는 다수결 없이 복사본 하나하나를 want와 비교했을 때의 오류 수와 전체 수다.
+// want가 집계보다 짧으면 앞쪽 비트만 비교한다.
 func (t Tally) Errors(want []byte) (errs, total int) {
-	for i := range t.Ones {
+	for i := range len(want) * 8 {
 		total += t.Copies[i]
 		if Bit(want, i) == 1 {
 			errs += t.Copies[i] - t.Ones[i]
