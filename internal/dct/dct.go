@@ -28,7 +28,7 @@ const (
 	U2, V2 = 1, 2
 
 	// 평균 휘도가 이 범위를 벗어난 블록은 값이 0·255에서 잘리므로 쓰지 않는다.
-	minLuma, maxLuma = 32, 223
+	MinLuma, MaxLuma = 32, 223
 
 	// DefaultStrength는 계수 차이 목표값 T의 기본값이다.
 	DefaultStrength = 36
@@ -105,7 +105,7 @@ func Blocks(orig *image.NRGBA) []Block {
 					sum += luma(p)
 				}
 			}
-			if m := sum / (N * N); m >= minLuma && m <= maxLuma {
+			if m := sum / (N * N); m >= MinLuma && m <= MaxLuma {
 				out = append(out, Block{x, y})
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -107,5 +108,64 @@ func TestRSReportsTooManyErrors(t *testing.T) {
 func TestRSEncodeRejectsLongCodeword(t *testing.T) {
 	if _, err := RSEncode(make([]byte, 224), 32); err == nil {
 		t.Fatal("expected length error")
+	}
+}
+
+func TestRSTraceFindsInjectedErrors(t *testing.T) {
+	msg := []byte("https://dseung001.github.io/")
+	code, err := RSEncode(msg, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := bytes.Clone(code)
+	wantPos := []int{0, 7, 27, 28, 59}
+	wantMag := []byte{0x01, 0x80, 0xff, 0x3c, 0x5a}
+	for i, p := range wantPos {
+		bad[p] ^= wantMag[i]
+	}
+
+	tr, err := RSDecodeTrace(bad, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Clean || len(tr.Locator) != len(wantPos)+1 {
+		t.Fatalf("clean %v, locator %x", tr.Clean, tr.Locator)
+	}
+	if !slices.Equal(tr.Positions, wantPos) || !bytes.Equal(tr.Magnitudes, wantMag) {
+		t.Fatalf("positions %v, magnitudes %x", tr.Positions, tr.Magnitudes)
+	}
+	if !bytes.Equal(tr.Received, bad) || !bytes.Equal(tr.Corrected, code) || !bytes.Equal(tr.Message, msg) {
+		t.Fatalf("received %x, corrected %x, message %q", tr.Received, tr.Corrected, tr.Message)
+	}
+	if slices.ContainsFunc(tr.Recheck, func(b byte) bool { return b != 0 }) {
+		t.Fatalf("recheck %x", tr.Recheck)
+	}
+}
+
+func TestRSTraceClean(t *testing.T) {
+	msg := []byte("watermark")
+	code, _ := RSEncode(msg, 32)
+	tr, err := RSDecodeTrace(code, 32)
+	if err != nil || !tr.Clean || tr.Positions != nil || !bytes.Equal(tr.Message, msg) {
+		t.Fatalf("err %v, trace %+v", err, tr)
+	}
+}
+
+func TestRSTraceReportsFailure(t *testing.T) {
+	r := rand.New(rand.NewPCG(3, 4))
+	msg := []byte("https://dseung001.github.io/")
+	code, _ := RSEncode(msg, 32)
+	for range 200 {
+		bad := corrupt(code, 17+r.IntN(20), r)
+		tr, err := RSDecodeTrace(bad, 32)
+		if err == nil {
+			continue // 다른 코드워드로 오정정된 경우
+		}
+		if !errors.Is(err, ErrUncorrectable) || tr.FailedAt == "" {
+			t.Fatalf("err %v, failedAt %q", err, tr.FailedAt)
+		}
+		if !bytes.Equal(tr.Message, bad[:len(msg)]) || tr.Corrected != nil {
+			t.Fatalf("message %x, corrected %x", tr.Message, tr.Corrected)
+		}
 	}
 }

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RS 복호</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="wide">
+  <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/strength.html">강도 비교</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a><a href="/codes.html">복구 방식 비교</a><a href="/rs.html" aria-current="page">RS 복호</a></nav>
+  <h1>다수결과 Reed-Solomon 복구 비교</h1>
+  <p class="muted">같은 블로그 주소를 LSB와 DCT에 따로 넣고, 다수결만 쓴 경우와 다수결 뒤에 RS를 더한 경우를 비교합니다. 이어서 RS 복호 6단계에서 데이터가 어떻게 바뀌는지 봅니다.</p>
+  <form id="form">
+    <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off" aria-label="숨길 메시지">
+    <button type="submit">측정하기</button>
+  </form>
+  <div class="summary" id="summary"></div>
+
+  <div id="out" hidden>
+    <section>
+      <h2><span class="num">1</span>실험 설정</h2>
+      <p class="muted" id="setDesc"></p>
+      <div class="tbl-wrap"><table class="rs-set" id="settings"></table></div>
+      <h3>코드워드 구조</h3>
+      <div class="layout" id="layout"></div>
+      <p class="note" id="setNote"></p>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span>방식별 요약</h2>
+      <p class="muted">삽입 품질은 원본 대비 값입니다. 완전 복원은 메시지가 원본과 정확히 일치한 훼손 조건의 수입니다.</p>
+      <div class="tbl-wrap"><table class="code-t" id="sumTable"></table></div>
+      <p class="note" style="margin-top:12px" id="sumNote"></p>
+    </section>
+
+    <div id="schemes"></div>
+
+    <section>
+      <h2><span class="num" id="traceNum">5</span>RS 복호 6단계</h2>
+      <p class="muted">아래 값은 선택한 조건에서 다수결로 만든 코드워드를 복호하며 기록한 실제 값입니다. 바이트는 16진수이고, 칸 위의 작은 숫자는 코드워드 인덱스입니다.</p>
+      <div class="code-controls">
+        <label>워터마크 방식 <select id="traceScheme"></select></label>
+        <label>훼손 조건 <select id="traceCase"></select></label>
+      </div>
+      <p class="summary" id="traceSum"></p>
+      <div class="legend">
+        <span><i class="sw rs-sw-m"></i>메시지</span>
+        <span><i class="sw rs-sw-p"></i>패리티</span>
+        <span><i class="sw rs-sw-e"></i>오류 또는 찾은 위치</span>
+        <span><i class="sw rs-sw-f"></i>정정한 바이트</span>
+      </div>
+      <ol class="rs-stages" id="stages"></ol>
+    </section>
+  </div>
+</main>
+<script src="/attack-view.js"></script>
+<script src="/rs.js"></script>
+</body>
+</html>

@@ -90,6 +90,7 @@ type scheme struct {
 	raw     *image.NRGBA // 삽입 직후 (alpha 유지)
 	wm      *image.NRGBA // 공격 전 기준 이미지 (불투명)
 	slots   int
+	frame   int // 한 번 반복되는 비트 수. LSB는 길이 헤더를 포함한다
 	repeat  int
 	read    func(*image.NRGBA) vote.Tally
 	header  func(*image.NRGBA) uint32 // LSB만
@@ -136,7 +137,7 @@ func (s *server) buildLSB(payload []byte) (*scheme, error) {
 
 	return &scheme{
 		method: "lsb", unit: "자리", payload: payload, raw: raw, wm: wm,
-		slots: len(pos), repeat: len(pos) / frameBits,
+		slots: len(pos), frame: frameBits, repeat: len(pos) / frameBits,
 		read:   func(img *image.NRGBA) vote.Tally { return lsb.ExtractSpread(img, pos, len(payload)) },
 		header: func(img *image.NRGBA) uint32 { return lsb.SpreadHeader(img, pos) },
 		samples: func(img *image.NRGBA) []sample {
@@ -188,7 +189,7 @@ func (s *server) buildDCT(payload []byte, strength float64) (*scheme, error) {
 
 	return &scheme{
 		method: "dct", unit: "블록", payload: payload, raw: raw, wm: wm,
-		slots: len(blocks), repeat: len(blocks) / nBits,
+		slots: len(blocks), frame: nBits, repeat: len(blocks) / nBits,
 		read: func(img *image.NRGBA) vote.Tally { return dct.Extract(img, blocks, len(payload)) },
 		samples: func(img *image.NRGBA) []sample {
 			out := make([]sample, 0, sampleCount)

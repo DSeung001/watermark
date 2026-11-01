@@ -69,6 +69,7 @@ func main() {
 	mux.HandleFunc("POST /api/attack", s.handleAttack)
 	mux.HandleFunc("POST /api/dct/embed", s.handleDCTEmbed)
 	mux.HandleFunc("POST /api/recovery", s.handleRecovery)
+	mux.HandleFunc("POST /api/rs", s.handleRS)
 
 	log.Printf("listening on http://localhost%s (원본: %s)", *addr, *in)
 	log.Fatal(http.ListenAndServe(*addr, mux))

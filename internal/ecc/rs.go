@@ -1,24 +1,29 @@
 package ecc
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 )
 
-// RSMaxLen은 GF(256) Reed-Solomon 코드워드의 최대 바이트 수다.
-const RSMaxLen = 255
+const (
+	// RSMaxLen은 GF(256) Reed-Solomon 코드워드의 최대 바이트 수다.
+	RSMaxLen = 255
+	// RSPrimitive는 GF(256)의 원시 다항식 x^8+x^4+x^3+x^2+1이다.
+	RSPrimitive = 0x11d
+)
 
 // ErrUncorrectable은 오류가 정정 한도를 넘었을 때 돌려준다.
 var ErrUncorrectable = errors.New("ecc: too many errors")
 
-// GF(256) 지수표와 로그표. 원시 다항식은 x^8+x^4+x^3+x^2+1(0x11d)이다.
+// GF(256) 지수표와 로그표. 생성원은 α=2다.
 var gfExp, gfLog = func() (exp [510]byte, log [256]int) {
 	x := 1
 	for i := range 255 {
 		exp[i], exp[i+255] = byte(x), byte(x)
 		log[x] = i
 		if x <<= 1; x&0x100 != 0 {
-			x ^= 0x11d
+			x ^= RSPrimitive
 		}
 	}
 	return exp, log
@@ -128,61 +133,99 @@ func berlekampMassey(syn []byte) []byte {
 	return loc[:min(errs+1, len(loc))]
 }
 
+// RSTrace는 복호 단계별 중간값이다.
+type RSTrace struct {
+	Received   []byte `json:"received"`   // 수신한 코드워드
+	Syndromes  []byte `json:"syndromes"`  // S_j = r(α^j)
+	Clean      bool   `json:"clean"`      // 신드롬이 모두 0이다
+	Locator    []byte `json:"locator"`    // 오류 위치 다항식 Λ, 낮은 차수부터
+	Omega      []byte `json:"omega"`      // 오류 값 다항식 Ω, 낮은 차수부터
+	Positions  []int  `json:"positions"`  // 찾은 오류의 코드워드 인덱스, 오름차순
+	Magnitudes []byte `json:"magnitudes"` // Positions와 같은 순서의 오류 값
+	Corrected  []byte `json:"corrected"`  // 정정한 코드워드
+	Recheck    []byte `json:"recheck"`    // 정정 후 다시 계산한 신드롬
+	Message    []byte `json:"message"`    // 추출한 메시지
+	FailedAt   string `json:"failedAt"`   // 실패 지점: degree, chien, forney, verify
+}
+
 // RSDecode는 코드워드를 정정해 메시지를 돌려준다. fixed는 고친 바이트 수다.
 // 정정에 실패하면 코드워드 앞부분을 그대로 돌려주고 ErrUncorrectable을 함께 준다.
 func RSDecode(code []byte, nsym int) (msg []byte, fixed int, err error) {
+	t, err := RSDecodeTrace(code, nsym)
+	if err != nil {
+		return t.Message, 0, err
+	}
+	return t.Message, len(t.Positions), nil
+}
+
+// RSDecodeTrace는 RSDecode와 같게 복호하면서 단계별 중간값을 기록한다.
+func RSDecodeTrace(code []byte, nsym int) (RSTrace, error) {
 	k := len(code) - nsym
 	if k < 0 || len(code) > RSMaxLen {
-		return nil, 0, fmt.Errorf("ecc: invalid codeword length %d", len(code))
+		return RSTrace{}, fmt.Errorf("ecc: invalid codeword length %d", len(code))
 	}
-	received := code[:k:k]
-	syn, clean := rsSyndromes(code, nsym)
-	if clean {
-		return append([]byte(nil), received...), 0, nil
+	t := RSTrace{Received: bytes.Clone(code), Message: bytes.Clone(code[:k])}
+	fail := func(at string) (RSTrace, error) {
+		t.FailedAt = at
+		return t, ErrUncorrectable
 	}
 
-	loc := berlekampMassey(syn)
+	t.Syndromes, t.Clean = rsSyndromes(code, nsym)
+	if t.Clean {
+		t.Corrected, t.Recheck = bytes.Clone(code), t.Syndromes
+		return t, nil
+	}
+
+	loc := berlekampMassey(t.Syndromes)
+	t.Locator = loc
 	degree := len(loc) - 1
 	if 2*degree > nsym {
-		return append([]byte(nil), received...), 0, ErrUncorrectable
+		return fail("degree")
 	}
 
-	// Chien Search: Λ(X^-1)=0인 X=α^p가 오류 위치다.
+	// Chien Search: Λ(X^-1)=0인 X=α^p가 오류 위치다. 인덱스 i의 차수는 p=n-1-i다.
 	n := len(code)
-	var powers []int
-	for p := range n {
-		if polyEval(loc, gfExp[(255-p)%255]) == 0 {
-			powers = append(powers, p)
+	for i := range n {
+		if polyEval(loc, gfExp[(255-(n-1-i))%255]) == 0 {
+			t.Positions = append(t.Positions, i)
 		}
 	}
-	if len(powers) != degree {
-		return append([]byte(nil), received...), 0, ErrUncorrectable
+	if len(t.Positions) != degree {
+		return fail("chien")
 	}
 
 	// Forney: 오류 값 e = X·Ω(X^-1)/Λ'(X^-1)
 	omega := make([]byte, nsym)
-	for i, s := range syn {
+	for i, s := range t.Syndromes {
 		for j, l := range loc {
 			if i+j < nsym {
 				omega[i+j] ^= gfMul(s, l)
 			}
 		}
 	}
+	t.Omega = omega
 	deriv := make([]byte, len(loc)-1)
 	for i := 1; i < len(loc); i += 2 {
 		deriv[i-1] = loc[i]
 	}
-	out := append([]byte(nil), code...)
-	for _, p := range powers {
+	out := bytes.Clone(code)
+	for _, i := range t.Positions {
+		p := n - 1 - i
 		inv := gfExp[(255-p)%255]
 		d := polyEval(deriv, inv)
 		if d == 0 {
-			return append([]byte(nil), received...), 0, ErrUncorrectable
+			return fail("forney")
 		}
-		out[n-1-p] ^= gfDiv(gfMul(gfExp[p], polyEval(omega, inv)), d)
+		e := gfDiv(gfMul(gfExp[p], polyEval(omega, inv)), d)
+		t.Magnitudes = append(t.Magnitudes, e)
+		out[i] ^= e
 	}
-	if _, ok := rsSyndromes(out, nsym); !ok {
-		return append([]byte(nil), received...), 0, ErrUncorrectable
+
+	recheck, ok := rsSyndromes(out, nsym)
+	t.Recheck = recheck
+	if !ok {
+		return fail("verify")
 	}
-	return out[:k:k], degree, nil
+	t.Corrected, t.Message = out, bytes.Clone(out[:k])
+	return t, nil
 }
