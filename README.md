@@ -10,6 +10,7 @@
 | 04 | LSB vs DCT 한눈에 비교 (BER) | 같은 서버의 http://localhost:8080/compare.html |
 
 | 05 | 워터마크 훼손 후 다수결 복구 | 같은 서버의 http://localhost:8080/recovery.html |
+| 06 | DCT 강도 T별 화질·강인성 비교 | 같은 서버의 http://localhost:8080/strength.html |
 
 훼손 후 복구 페이지에서는 LSB/DCT, JPEG·Blur·축소 조건을 선택하고, 훼손 이미지 확인 → 메시지 복구 → 비트별 투표 결과를 단계별로 확인합니다. 복구 대상은 숨긴 메시지이며 이미지 화질 복원이 아닙니다. 추출 시 삽입 위치와 메시지 길이를 알고 있다고 가정합니다.
 

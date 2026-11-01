@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DCT 강도 비교</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="wide">
+  <nav class="nav" aria-label="페이지"><a href="/">1편 LSB</a><a href="/attacks.html">훼손 실험</a><a href="/dct.html">DCT</a><a href="/strength.html" aria-current="page">강도 비교</a><a href="/compare.html">한눈에 비교</a><a href="/recovery.html">훼손 후 복구</a></nav>
+  <h1>DCT 강도 T별 비교</h1>
+  <p class="muted">T는 두 계수의 차이를 얼마나 벌릴지 정하는 값입니다. 같은 메시지를 T만 바꿔 넣고 화질과 훼손 내구성을 비교합니다.</p>
+  <form id="form">
+    <input type="text" id="msg" value="https://dseung001.github.io/" spellcheck="false" autocomplete="off" aria-label="숨길 메시지">
+    <button type="submit">비교하기</button>
+  </form>
+  <div class="summary" id="summary"></div>
+
+  <div id="out" hidden>
+    <section>
+      <h2><span class="num">1</span>화질: T가 클수록 원본에서 멀어집니다</h2>
+      <div class="st-top">
+        <div id="psnrChart"></div>
+        <div class="tbl-wrap"><table id="quality"></table></div>
+      </div>
+      <p class="note" style="margin-top:12px">PSNR과 SSIM은 원본 대비 값입니다. 40dB 이상이면 눈으로 차이를 느끼기 어렵습니다. 투명 영역까지 포함한 평균이라 보이는 영역만 보면 PSNR은 더 낮습니다.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span>내구성: T가 클수록 훼손을 더 버팁니다</h2>
+      <p class="muted">BER은 블록을 하나씩 따로 읽었을 때 비트가 틀린 비율입니다. 다수결 복구는 적용하지 않은 값이라 T의 효과만 보입니다. 0.5는 무작위 추측과 같습니다.</p>
+      <div class="tbl-wrap"><table class="st-ber" id="ber"></table></div>
+      <h3>T에 따른 BER 변화</h3>
+      <div id="berCharts"></div>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span>변화량과 훼손 비교</h2>
+      <div class="st-controls">
+        <label>보기
+          <select id="view">
+            <option value="embed">삽입 변화량</option>
+            <option value="attacked">훼손 결과</option>
+            <option value="errors">오류 지도</option>
+          </select>
+        </label>
+        <label>훼손 조건 <select id="attack"></select></label>
+      </div>
+      <p class="muted" id="viewDesc"></p>
+      <div class="st-views" id="views"></div>
+    </section>
+
+    <section>
+      <h2><span class="num">4</span>실제 이미지에 넣은 결과</h2>
+      <p class="muted">증폭하지 않은 실제 결과입니다. 전체 크기로는 차이가 잘 보이지 않아도, 평탄한 영역을 확대하면 T가 클수록 8×8 블록 무늬가 드러납니다.</p>
+      <div class="st-views four" id="actual"></div>
+      <h3>일부 확대</h3>
+      <p class="muted" id="zoomDesc"></p>
+      <div class="st-views four" id="actualZoom"></div>
+    </section>
+  </div>
+</main>
+<script src="/attack-view.js"></script>
+<script src="/strength.js"></script>
+</body>
+</html>

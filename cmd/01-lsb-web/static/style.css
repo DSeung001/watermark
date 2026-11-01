@@ -191,3 +191,22 @@ button:disabled { opacity: .55; cursor: default; }
 #experiment .field { flex-wrap: wrap; }
 #raw { margin: 16px 0; }
 #recovered { scroll-margin-top: 16px; }
+
+/* DCT 강도별 비교 */
+:root { --q1: #8fb3ef; --q2: #2f6fde; --q3: #173f8a; }
+@media (prefers-color-scheme: dark) { :root { --q1: #3f5f96; --q2: #6c9bf0; --q3: #b9d0fb; } }
+.st-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: center; }
+.st-top .charts { grid-template-columns: minmax(0, 1fr); }
+table.st-ber th, table.st-ber td { padding: 4px; text-align: center; }
+table.st-ber th[scope=row] { text-align: left; padding-right: 10px; font-family: inherit; }
+.st-cell { min-width: 64px; padding: 4px 6px; border-radius: 6px; background: var(--bg); }
+.st-cell b { display: block; font: 700 14px var(--mono); }
+.st-controls { display: flex; gap: 8px 16px; flex-wrap: wrap; margin: 10px 0 14px; font-size: 14px; color: var(--muted); }
+.st-controls label { display: flex; gap: 8px; align-items: center; }
+.st-views { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) {
+  .st-top { grid-template-columns: minmax(0, 1fr); }
+  .st-views { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.st-views.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 760px) { .st-views.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

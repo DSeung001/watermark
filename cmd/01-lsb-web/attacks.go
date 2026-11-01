@@ -27,6 +27,7 @@ const (
 	maxShowBits     = 512 // 응답에 넣는 비트 격자 상한
 	sampleCount     = 10  // 값 변화 표의 행 수
 	diffGain        = 32  // 차이 이미지 증폭 배율
+	embedDiffGain   = 10  // 삽입 변화량 증폭 배율. 강도 96에서도 포화되지 않는 값
 	minStrength     = 4
 	maxStrength     = 96
 )
@@ -66,18 +67,19 @@ type attackCase struct {
 }
 
 type attackResponse struct {
-	Method   string       `json:"method"`
-	Message  string       `json:"message"`
-	Strength float64      `json:"strength"`
-	Width    int          `json:"width"`
-	Height   int          `json:"height"`
-	Slots    int          `json:"slots"`  // 삽입 자리 수
-	Repeat   int          `json:"repeat"` // 메시지 전체가 반복된 횟수
-	Unit     string       `json:"unit"`
-	DiffGain int          `json:"diffGain"`
-	WmPSNR   *float64     `json:"wmPsnr"` // 원본 대비 삽입 품질
-	WmSSIM   float64      `json:"wmSsim"`
-	Cases    []attackCase `json:"cases"`
+	Method    string       `json:"method"`
+	Message   string       `json:"message"`
+	Strength  float64      `json:"strength"`
+	Width     int          `json:"width"`
+	Height    int          `json:"height"`
+	Slots     int          `json:"slots"`  // 삽입 자리 수
+	Repeat    int          `json:"repeat"` // 메시지 전체가 반복된 횟수
+	Unit      string       `json:"unit"`
+	DiffGain  int          `json:"diffGain"`
+	EmbedGain int          `json:"embedGain"`
+	WmPSNR    *float64     `json:"wmPsnr"` // 원본 대비 삽입 품질
+	WmSSIM    float64      `json:"wmSsim"`
+	Cases     []attackCase `json:"cases"`
 }
 
 // scheme은 한 방식으로 워터마크를 넣은 결과와 읽는 방법을 묶는다.
@@ -296,7 +298,7 @@ func (s *server) handleAttack(w http.ResponseWriter, r *http.Request) {
 	resp := attackResponse{
 		Method: sc.method, Message: req.Message, Strength: req.Strength,
 		Width: b.Dx(), Height: b.Dy(),
-		Slots: sc.slots, Repeat: sc.repeat, Unit: sc.unit, DiffGain: diffGain,
+		Slots: sc.slots, Repeat: sc.repeat, Unit: sc.unit, DiffGain: diffGain, EmbedGain: embedDiffGain,
 		WmPSNR: finite(metrics.PSNR(s.orig, sc.raw)),
 		WmSSIM: metrics.SSIM(s.orig, sc.raw),
 	}
@@ -344,6 +346,10 @@ func (s *server) handleAttackedImage(w http.ResponseWriter, r *http.Request) {
 		out = img
 	case "diff":
 		out = visualize.AmplifiedDiff(sc.wm, img, diffGain)
+	case "embed":
+		out = visualize.AmplifiedDiff(s.orig, sc.raw, embedDiffGain)
+	case "raw":
+		out = sc.raw
 	case "plane":
 		out = visualize.BitPlane(img, 0)
 	case "errors":
